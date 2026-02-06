@@ -55,8 +55,8 @@ sudo dpkg -i star-language_1.0.0_amd64.deb
 ```
 O utiliza el tarball `.tar.gz`:
 ```bash
-tar -xzf star-language-v2.0.0-linux.tar.gz
-cd star-language-v2.0.0-linux && ./install.sh
+tar -xzf star-language-v1.0.0-linux.tar.gz
+cd star-language-v1.0.0-linux && ./install.sh
 ```
 
 ### Windows
