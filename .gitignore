@@ -1,0 +1,27 @@
+# .NET
+bin/
+obj/
+*.user
+*.userosscache
+*.sln.docstates
+publish/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Star Release Assets
+*.zip
+*.vsix
+*.deb
+*.tar.gz
+star
+star_binary
+star-language_*/
+star-language-v*/

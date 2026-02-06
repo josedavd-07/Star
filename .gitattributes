@@ -1,0 +1,25 @@
+# Force GitHub to recognize .st files as Star Language
+*.st linguist-language=Star
+
+# Define Star Language color
+# Since 'Star' is a custom name here, GitHub will use the first occurance or a default.
+# We explicitly set attributes for Linguist.
+*.st linguist-language=Star
+
+# Exclude EVERYTHING else from the language bar to ensure 100% Star
+*.cs linguist-vendored
+*.csproj linguist-vendored
+*.sln linguist-vendored
+*.sh linguist-vendored
+*.json linguist-vendored
+*.md linguist-documentation
+LICENSE linguist-vendored
+.gitattributes linguist-vendored
+.gitignore linguist-vendored
+Fonts/* linguist-vendored
+StarCompiler/Fonts/* linguist-vendored
+StarExtension/icon.png linguist-vendored
+scripts/* linguist-vendored
+
+# User requested .star recognition
+*.star linguist-language=Star
