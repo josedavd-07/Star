@@ -7,6 +7,12 @@ DIST_DIR="dist"
 echo "🌟 Initiating Star Language Release Protocol v${VERSION}..."
 mkdir -p ${DIST_DIR}
 
+# 0. Compile Base Binary (Linux)
+echo "🔨 Compiling Core Binary..."
+dotnet publish StarCompiler/StarCompiler.csproj -c Release -r linux-x64 --self-contained -o ./publish
+cp ./publish/StarCompiler ./star_binary
+chmod +x ./star_binary
+
 # 1. Build Linux (Debian & Tarball)
 echo "🐧 Building for Linux..."
 ./scripts/build-deb.sh

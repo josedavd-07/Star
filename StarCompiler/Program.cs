@@ -38,6 +38,11 @@ class Program
             case "-v":
                 Console.WriteLine("Star v1.0 🌟");
                 break;
+            case "help":
+            case "-h":
+            case "--help":
+                ShowUsage();
+                break;
             case "new":
                 CreateNewProject(args);
                 break;
@@ -59,13 +64,14 @@ class Program
 
     static void ShowUsage()
     {
-        Console.WriteLine("Star Language Compiler 🌟");
-        Console.WriteLine("Uso:");
-        Console.WriteLine("  star --version                   - Muestra la versión actual");
-        Console.WriteLine("  star new console -name <name>    - Crea una nueva constelación (proyecto)");
-        Console.WriteLine("  star run [file.st]               - Lanza el programa (usa .starproj si existe)");
-        Console.WriteLine("  star build [file.st]             - Construye el ejecutable (usa .starproj si existe)");
-        Console.WriteLine("  star uninstall                   - Elimina Star de este sistema");
+        Console.WriteLine("\x1b[1mStar Language Compiler 🌟\x1b[0m");
+        Console.WriteLine("\nUso:");
+        Console.WriteLine("  \x1b[32mstar new <name>\x1b[0m                - Crea una nueva constelación (proyecto)");
+        Console.WriteLine("  \x1b[32mstar run [file.st]\x1b[0m             - Lanza la misión (ejecuta el script)");
+        Console.WriteLine("  \x1b[32mstar build [file.st]\x1b[0m           - Construye el ejecutable para despliegue");
+        Console.WriteLine("  \x1b[32mstar help\x1b[0m                      - Muestra esta guía de navegación");
+        Console.WriteLine("  \x1b[32mstar --version\x1b[0m                 - Muestra la versión actual");
+        Console.WriteLine("  \x1b[32mstar uninstall\x1b[0m                 - Elimina Star de este sistema");
     }
 
     static string? GetProjectEntry(string[] args)
@@ -207,13 +213,19 @@ class Program
 
     static void CreateNewProject(string[] args)
     {
-        if (args.Length < 4 || args[1] != "console" || args[2] != "-name")
+        if (args.Length < 2)
         {
-            Console.WriteLine("[!] Error: Uso correcto: star new console -name <proyecto>");
+            Console.WriteLine("[!] Error: Nombre de proyecto requerido. Uso: star new <nombre>");
             return;
         }
 
-        string projectName = args[3];
+        string projectName = args[1];
+
+        // Soporte para la sintaxis antigua por si acaso 'console -name <name>'
+        if (args.Length >= 4 && args[1] == "console" && args[2] == "-name")
+        {
+            projectName = args[3];
+        }
         if (Directory.Exists(projectName))
         {
             Console.WriteLine($"[!] Error: El sistema estelar '{projectName}' ya existe.");

@@ -13,7 +13,15 @@ mkdir -p ${DEB_DIR}/usr/local/share/star-language/fonts
 mkdir -p ${DEB_DIR}/DEBIAN
 
 # 2. Copy binaries and assets
-cp star_binary ${DEB_DIR}/usr/local/bin/star
+# Copy ALL files from the publish directory (not just the executable)
+cp -r ./publish/* ${DEB_DIR}/usr/local/share/star-language/
+chmod +x ${DEB_DIR}/usr/local/share/star-language/StarCompiler
+
+# Create a wrapper script in /usr/local/bin that calls the actual binary
+cat <<'WRAPPER' > ${DEB_DIR}/usr/local/bin/star
+#!/bin/bash
+exec /usr/local/share/star-language/StarCompiler "$@"
+WRAPPER
 chmod +x ${DEB_DIR}/usr/local/bin/star
 
 cp assets/fonts_collection/*.otf ${DEB_DIR}/usr/local/share/star-language/fonts/
