@@ -2,9 +2,11 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
-using StarCompiler.Lexer;
-using StarCompiler.Parser;
-using StarCompiler.Runtime;
+using Star.Compiler.Diagnostics;
+using Star.Compiler.Compilation;
+using Star.Compiler.Backends;
+using Star.Compiler.Ir;
+using Star.Compiler.Text;
 
 /// <summary>
 /// Provee metadata para un proyecto Star.
@@ -14,6 +16,7 @@ public class StarProject
     public string language { get; set; } = "Star";
     public string version { get; set; } = "1.0.0";
     public string? project_name { get; set; }
+    public string target { get; set; } = "console";
     public string main { get; set; } = "src/Main.st";
 }
 
@@ -22,12 +25,12 @@ public class StarProject
 /// </summary>
 class Program
 {
-    static void Main(string[] args)
+    static int Main(string[] args)
     {
         if (args.Length == 0)
         {
             ShowUsage();
-            return;
+            return 2;
         }
 
         string command = args[0];
@@ -37,28 +40,26 @@ class Program
             case "--version":
             case "-v":
                 Console.WriteLine("Star v1.0 🌟");
-                break;
+                return 0;
             case "help":
             case "-h":
             case "--help":
                 ShowUsage();
-                break;
+                return 0;
             case "new":
                 CreateNewProject(args);
-                break;
+                return 0;
             case "run":
-                RunProgram(args);
-                break;
+                return RunProgram(args);
             case "build":
-                BuildProgram(args);
-                break;
+                return BuildProgram(args);
             case "uninstall":
                 Uninstall();
-                break;
+                return 0;
             default:
                 Console.WriteLine($"[!] Comando desconocido: {command}");
                 ShowUsage();
-                break;
+                return 2;
         }
     }
 
@@ -66,9 +67,10 @@ class Program
     {
         Console.WriteLine("\x1b[1mStar Language Compiler 🌟\x1b[0m");
         Console.WriteLine("\nUso:");
-        Console.WriteLine("  \x1b[32mstar new <name>\x1b[0m                - Crea una nueva constelación (proyecto)");
-        Console.WriteLine("  \x1b[32mstar run [file.st]\x1b[0m             - Lanza la misión (ejecuta el script)");
-        Console.WriteLine("  \x1b[32mstar build [file.st]\x1b[0m           - Construye el ejecutable para despliegue");
+        Console.WriteLine("  \x1b[32mstar new console <name>\x1b[0m        - Crea un proyecto de consola Star");
+        Console.WriteLine("  \x1b[32mstar run [file.st]\x1b[0m             - Compila y ejecuta la misión");
+        Console.WriteLine("  \x1b[32mstar build [file.st] [--self-contained] [--runtime <RID>]\x1b[0m");
+        Console.WriteLine("                                           - Construye un artefacto de Star");
         Console.WriteLine("  \x1b[32mstar help\x1b[0m                      - Muestra esta guía de navegación");
         Console.WriteLine("  \x1b[32mstar --version\x1b[0m                 - Muestra la versión actual");
         Console.WriteLine("  \x1b[32mstar uninstall\x1b[0m                 - Elimina Star de este sistema");
@@ -77,9 +79,10 @@ class Program
     static string? GetProjectEntry(string[] args)
     {
         // Si se provee un archivo, usar ese.
-        if (args.Length >= 2 && args[1].EndsWith(".st"))
+        var explicitFile = args.FirstOrDefault(argument => argument.EndsWith(".st", StringComparison.Ordinal));
+        if (explicitFile is not null)
         {
-            return args[1];
+            return explicitFile;
         }
 
         // Buscar archivo .starproj en el directorio actual.
@@ -101,125 +104,203 @@ class Program
         return null;
     }
 
-    static void RunProgram(string[] args)
+    static int RunProgram(string[] args)
     {
         string? filePath = GetProjectEntry(args);
 
         if (string.IsNullOrEmpty(filePath))
         {
             Console.WriteLine("[!] Error: No se encontró un archivo de entrada o .starproj.");
-            return;
+            return 2;
         }
 
         if (!File.Exists(filePath))
         {
             Console.WriteLine($"[!] Error: Archivo no encontrado: {filePath}");
-            return;
+            return 2;
         }
-
-        string code = File.ReadAllText(filePath);
 
         try
         {
-            var lexer = new Lexer(code);
-            var tokens = lexer.Tokenize();
-            var parser = new ASTParser(tokens);
-            var statements = parser.Parse();
-            var interpreter = new Interpreter();
-            interpreter.ExecuteWithMainSupport(statements);
+            var compilation = StarCompilerFacade.CompileFile(filePath);
+            if (ReportDiagnostics(compilation.Source, compilation.Diagnostics))
+            {
+                return 1;
+            }
+            if (GetProjectTarget(args) == "web")
+            {
+                var page = BuildWebArtifact(compilation, filePath);
+                if (page is null) return 1;
+                Console.WriteLine($"[+] Sitio web generado: {page}");
+                return 0;
+            }
+            if (GetProjectTarget(args) == "desktop")
+            {
+                var desktop = BuildDesktopArtifact(compilation, filePath, "Debug", IsSelfContained(args), RuntimeIdentifier(args));
+                if (desktop is null) return 1;
+                var desktopStart = LaunchInfo(desktop, IsSelfContained(args));
+                using var desktopProcess = Process.Start(desktopStart);
+                if (desktopProcess is null) return 1;
+                desktopProcess.WaitForExit();
+                return desktopProcess.ExitCode;
+            }
+            var artifact = BuildArtifact(compilation, filePath, "Debug", IsSelfContained(args), RuntimeIdentifier(args));
+            if (artifact is null) return 1;
+            var startInfo = LaunchInfo(artifact, IsSelfContained(args));
+            using var process = Process.Start(startInfo);
+            if (process is null) return 1;
+            process.WaitForExit();
+            return process.ExitCode;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[!] Error de ejecución: {ex.Message}");
-            Environment.Exit(1);
+            return 1;
         }
     }
 
-    static void BuildProgram(string[] args)
+    static int BuildProgram(string[] args)
     {
         string? filePath = GetProjectEntry(args);
 
         if (string.IsNullOrEmpty(filePath))
         {
             Console.WriteLine("[!] Error: No se encontró un archivo de entrada o .starproj.");
-            return;
+            return 2;
         }
 
         if (!File.Exists(filePath))
         {
             Console.WriteLine($"[!] Error: Archivo no encontrado: {filePath}");
-            return;
+            return 2;
         }
 
         Console.WriteLine($"[*] Preparando despegue para {filePath}...");
 
         try
         {
-            string absolutePath = Path.GetFullPath(filePath);
-            string fileName = Path.GetFileNameWithoutExtension(filePath);
-            string outputDir = Path.Combine(Directory.GetCurrentDirectory(), "bin", "Release");
-            string outputPath = Path.Combine(outputDir, fileName);
-
-            Directory.CreateDirectory(outputDir);
-
-            // Validación rápida
-            string code = File.ReadAllText(filePath);
-            var lexer = new Lexer(code);
-            var tokens = lexer.Tokenize();
-            var parser = new ASTParser(tokens);
-            parser.Parse();
-
-            Console.WriteLine("[+] Validación de trayectoria (sintaxis) completada.");
-
-            var startInfo = new ProcessStartInfo
+            var compilation = StarCompilerFacade.CompileFile(filePath);
+            if (ReportDiagnostics(compilation.Source, compilation.Diagnostics))
             {
-                FileName = "dotnet",
-                Arguments = $"publish -c Release -r linux-x64 --self-contained -o \"{outputDir}\"",
-                WorkingDirectory = AppContext.BaseDirectory,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            using (var process = Process.Start(startInfo))
-            {
-                if (process == null)
-                {
-                    Console.WriteLine("[!] Error: No se pudo iniciar el proceso de construcción.");
-                    return;
-                }
-
-                string error = process.StandardError.ReadToEnd();
-                process.WaitForExit();
-
-                if (process.ExitCode != 0)
-                {
-                    Console.WriteLine("[!] ¡Fallo en el sistema! La construcción ha fallado.");
-                    Console.WriteLine(error);
-                    return;
-                }
+                return 1;
             }
+            if (GetProjectTarget(args) == "web")
+            {
+                var page = BuildWebArtifact(compilation, filePath);
+                if (page is null) return 1;
+                Console.WriteLine($"[+] Sitio web construido: {page}");
+                return 0;
+            }
+            if (GetProjectTarget(args) == "desktop")
+            {
+                var desktop = BuildDesktopArtifact(compilation, filePath, "Release", IsSelfContained(args), RuntimeIdentifier(args));
+                if (desktop is null) return 1;
+                Console.WriteLine($"[+] Aplicación de escritorio construida: {desktop}");
+                return 0;
+            }
+            var artifact = BuildArtifact(compilation, filePath, "Release", IsSelfContained(args), RuntimeIdentifier(args));
+            if (artifact is null) return 1;
 
             Console.WriteLine($"[+] ¡Nave construida con éxito!");
-            Console.WriteLine($"[*] Ubicación: {outputPath}");
+            Console.WriteLine($"[*] Ubicación: {artifact}");
+            return 0;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[!] Error crítico durante la construcción: {ex.Message}");
-            Environment.Exit(1);
+            return 1;
         }
+    }
+
+    static string? BuildArtifact(CompilationResult compilation, string filePath, string configuration, bool selfContained = false, string? runtimeIdentifier = null)
+    {
+        var lowered = StarIrLowerer.Lower(compilation);
+        if (ReportDiagnostics(compilation.Source, lowered.Diagnostics)) return null;
+        var emitted = new DotNetSourceBackend().Emit(lowered.Ir!);
+        if (ReportDiagnostics(compilation.Source, emitted.Diagnostics)) return null;
+        var name = Path.GetFileNameWithoutExtension(filePath);
+        var outputDirectory = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(filePath))!, "bin", configuration, name);
+        var built = new DotNetAssemblyHost().Build(emitted, outputDirectory, name, selfContained, runtimeIdentifier);
+        if (ReportDiagnostics(compilation.Source, built.Diagnostics)) return null;
+        return ArtifactPath(outputDirectory, name, selfContained, built);
+    }
+
+    static string? BuildWebArtifact(CompilationResult compilation, string filePath)
+    {
+        var lowered = StarIrLowerer.Lower(compilation);
+        if (ReportDiagnostics(compilation.Source, lowered.Diagnostics)) return null;
+        var emitted = new JavaScriptSourceBackend().Emit(lowered.Ir!);
+        if (ReportDiagnostics(compilation.Source, emitted.Diagnostics)) return null;
+        var directory = Path.Combine(Directory.GetCurrentDirectory(), "bin", "web");
+        Directory.CreateDirectory(directory);
+        foreach (var artifact in emitted.Artifacts) File.WriteAllBytes(Path.Combine(directory, artifact.Name), artifact.Content.ToArray());
+        return Path.Combine(directory, "index.html");
+    }
+
+    static string? BuildDesktopArtifact(CompilationResult compilation, string filePath, string configuration, bool selfContained = false, string? runtimeIdentifier = null)
+    {
+        var lowered = StarIrLowerer.Lower(compilation);
+        if (ReportDiagnostics(compilation.Source, lowered.Diagnostics)) return null;
+        var emitted = new DotNetSourceBackend().Emit(lowered.Ir!);
+        if (ReportDiagnostics(compilation.Source, emitted.Diagnostics)) return null;
+        var name = Path.GetFileNameWithoutExtension(filePath);
+        var directory = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(filePath))!, "bin", configuration, name);
+        var built = new AvaloniaDesktopHost().Build(emitted, directory, name, selfContained, runtimeIdentifier);
+        if (ReportDiagnostics(compilation.Source, built.Diagnostics)) return null;
+        return ArtifactPath(directory, name, selfContained, built);
+    }
+
+    static string GetProjectTarget(string[] args)
+    {
+        if (args.Any(argument => argument.EndsWith(".st", StringComparison.Ordinal))) return "console";
+        var project = Directory.GetFiles(Directory.GetCurrentDirectory(), "*.starproj").FirstOrDefault();
+        if (project is null) return "console";
+        try { return JsonSerializer.Deserialize<StarProject>(File.ReadAllText(project))?.target ?? "console"; }
+        catch { return "console"; }
+    }
+
+    static bool IsSelfContained(string[] args) => args.Contains("--self-contained", StringComparer.Ordinal);
+
+    static string? RuntimeIdentifier(string[] args)
+    {
+        var index = Array.IndexOf(args, "--runtime");
+        return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
+    }
+
+    static string? ArtifactPath(string directory, string name, bool selfContained, StarBackendEmission emission)
+    {
+        if (selfContained)
+        {
+            var executable = emission.Artifacts.FirstOrDefault(artifact => artifact.Name is var candidate && (candidate == name || candidate == $"{name}.exe"));
+            if (executable is not null) return Path.Combine(directory, executable.Name);
+        }
+        return emission.Artifacts.FirstOrDefault(artifact => artifact.Name == $"{name}.dll") is { } assembly ? Path.Combine(directory, assembly.Name) : null;
+    }
+
+    static ProcessStartInfo LaunchInfo(string artifact, bool selfContained)
+    {
+        if (selfContained) return new ProcessStartInfo(artifact) { UseShellExecute = false };
+        var start = new ProcessStartInfo("dotnet") { UseShellExecute = false };
+        start.ArgumentList.Add(artifact);
+        return start;
     }
 
     static void CreateNewProject(string[] args)
     {
         if (args.Length < 2)
         {
-            Console.WriteLine("[!] Error: Nombre de proyecto requerido. Uso: star new <nombre>");
+            Console.WriteLine("[!] Error: Nombre de proyecto requerido. Uso: star new console <nombre>");
             return;
         }
 
+        var target = "console";
         string projectName = args[1];
+
+        if (args.Length >= 3 && args[1] is "console" or "desktop" or "web")
+        {
+            target = args[1];
+            projectName = args[2];
+        }
 
         // Soporte para la sintaxis antigua por si acaso 'console -name <name>'
         if (args.Length >= 4 && args[1] == "console" && args[2] == "-name")
@@ -235,40 +316,24 @@ class Program
         try
         {
             Console.WriteLine($"[Star] ✨ Forjando nueva galaxia: {projectName}...");
+            var projectDirectoryName = Path.GetFileName(Path.TrimEndingDirectorySeparator(projectName));
+            var namespaceName = ToStarIdentifier(projectDirectoryName);
 
             Directory.CreateDirectory(projectName);
             Directory.CreateDirectory(Path.Combine(projectName, "src"));
 
             // Generar .starproj
-            var projectMetadata = new StarProject { project_name = projectName };
+            var projectMetadata = new StarProject { project_name = projectDirectoryName, target = target };
             string projJson = JsonSerializer.Serialize(projectMetadata, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(Path.Combine(projectName, $"{projectName}.starproj"), projJson);
+            File.WriteAllText(Path.Combine(projectName, $"{projectDirectoryName}.starproj"), projJson);
             Console.WriteLine($"[Star] 📄 Archivo de configuración .starproj generado.");
 
-            // Generar Main.st con una plantilla más funcional
+            // The console template exercises the modern compiled path without depending on the legacy interpreter.
             string mainFile = Path.Combine(projectName, "src", "Main.st");
-            string template = $@"StarName {projectName}.Core;
-
-// Ejemplo de una Constelación (Clase)
-Constellation Explorador {{
-    Public String Nombre;
-    Public Int Nivel;
-
-    Public StarFunction Saludar() {{
-        EmitLn(""¡Hola! Soy "" + this.Nombre + "" y mi nivel es "" + this.Nivel);
-    }}
-}}
+            string template = $@"StarName {namespaceName}.Core;
 
 StarFunction Main() {{
-    EmitLn(""--- ¡Bienvenido a la Galaxia {projectName}! ---"");
-    
-    // Instanciando un explorador
-    Explorador p = new Explorador();
-    p.Nombre = ""Nova"";
-    p.Nivel = 10;
-    p.Saludar();
-
-    EmitLn(""Tu aventura galáctica comienza ahora."");
+    EmitLn(""Bienvenido a Star: {projectDirectoryName}"");
 }}
 ";
             File.WriteAllText(mainFile, template);
@@ -295,5 +360,22 @@ StarFunction Main() {{
         Console.WriteLine("    rm ~/.local/share/fonts/SF-Mono-*");
         Console.WriteLine("    fc-cache -f -v");
         Console.WriteLine("\n[!] Star espera volverte a ver pronto. ¡Buen viaje, explorador!");
+    }
+
+    private static string ToStarIdentifier(string name)
+    {
+        var characters = name.Select(character => char.IsLetterOrDigit(character) || character == '_' ? character : '_').ToArray();
+        var result = new string(characters);
+        return string.IsNullOrEmpty(result) || char.IsDigit(result[0]) ? "StarProject" : result;
+    }
+
+    private static bool ReportDiagnostics(SourceText source, IReadOnlyList<Diagnostic> diagnostics)
+    {
+        foreach (var diagnostic in diagnostics)
+        {
+            Console.Error.WriteLine(DiagnosticFormatter.Format(source, diagnostic));
+        }
+
+        return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 }

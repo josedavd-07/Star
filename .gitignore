@@ -9,8 +9,23 @@ publish/
 # IDEs
 .idea/
 .vscode/
+.vs/
 *.swp
 *.swo
+
+# Test, coverage, and local tooling
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+*.trx
+.dotnet/
+.nuget/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
 
 # OS
 .DS_Store
@@ -25,3 +40,6 @@ star
 star_binary
 star-language_*/
 star-language-v*/
+
+# Local working notes; user-facing repository files belong outside this directory.
+work/

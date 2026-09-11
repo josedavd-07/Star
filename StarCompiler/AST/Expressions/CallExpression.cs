@@ -40,16 +40,16 @@ public class CallExpression : Expression
                     Console.WriteLine(val);
                 else if (funcName == "Log")
                     Console.WriteLine($"LOG: {val}");
-                return null; // These functions don't return a value in this context
+                return Runtime.StarUnit.Value;
             }
-            return interpreter.CallFunction(varExpr.Name, args);
+            return interpreter.CallFunction(varExpr.Name, args) ?? Runtime.StarUnit.Value;
         }
         else if (Callee is MemberAccessExpression memberExpr)
         {
             var function = memberExpr.Evaluate(interpreter);
             if (function is Statements.FunctionDeclaration funcDecl)
             {
-                return interpreter.CallFunction(funcDecl.Name, args);
+                return interpreter.CallFunction(funcDecl.Name, args) ?? Runtime.StarUnit.Value;
             }
         }
 

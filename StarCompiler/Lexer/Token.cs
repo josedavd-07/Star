@@ -1,3 +1,5 @@
+using Star.Compiler.Text;
+
 namespace StarCompiler.Lexer;
 
 public enum TokenType
@@ -36,10 +38,17 @@ public class Token
 {
     public TokenType Type { get; }
     public string Value { get; }
+    public TextSpan Span { get; }
 
     public Token(TokenType type, string value)
+        : this(type, value, new TextSpan(0, value.Length))
+    {
+    }
+
+    public Token(TokenType type, string value, TextSpan span)
     {
         Type = type;
         Value = value;
+        Span = span;
     }
 }

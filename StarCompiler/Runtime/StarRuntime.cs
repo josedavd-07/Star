@@ -11,7 +11,7 @@ public class StarRuntime
 {
     private readonly Dictionary<string, (string Type, object Value)> _variables = new();
 
-    public void Emit(object valueObj, bool newline = false)
+    public void Emit(object? valueObj, bool newline = false)
     {
         string output;
         // If it's a valid variable name, resolve it?
@@ -27,7 +27,7 @@ public class StarRuntime
         }
         else
         {
-            output = valueObj.ToString();
+            output = valueObj?.ToString() ?? string.Empty;
         }
 
         if (newline)
